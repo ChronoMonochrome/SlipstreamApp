@@ -4,17 +4,29 @@ plugins {
 }
 
 android {
-    namespace = "com.example.commandexecutor"
+    namespace = "net.typeblob.socks"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.commandexecutor"
+        applicationId = "net.typeblob.socks"
         minSdk = 26 // Required for reliable Foreground Service implementation and recent APIs
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
     }
 
+    packaging {
+        jniLibs {
+            // This forces the gradle plugin to package .so files in a way 
+            // that allows them to be extracted to the filesystem
+            useLegacyPackaging = true
+        }
+    }
+
+    buildFeatures {
+        aidl = true
+        buildConfig = true
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
