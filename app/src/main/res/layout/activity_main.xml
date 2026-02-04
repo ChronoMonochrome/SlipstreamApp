@@ -1,241 +1,248 @@
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-                                                   xmlns:app="http://schemas.android.com/apk/res-auto"
-                                                   xmlns:tools="http://schemas.android.com/tools"
-                                                   android:layout_width="match_parent"
-                                                   android:layout_height="match_parent"
-                                                   android:padding="16dp"
-                                                   tools:context=".MainActivity">
-
-    <TextView
-        android:id="@+id/title_text"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:gravity="center"
-        android:text="Slipstream Tunnel"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
 
     <LinearLayout
-        android:id="@+id/profile_management_layout"
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/title_text">
+        android:orientation="vertical">
 
+        <!-- Profile Management -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Profile: "
+            android:text="Profile"
+            android:textSize="16sp"
             android:textStyle="bold" />
 
-        <Spinner
-            android:id="@+id/profile_spinner"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="16dp">
 
-        <ImageButton
-            android:id="@+id/add_profile_button"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Add Profile"
-            android:src="@android:drawable/ic_menu_add" />
+            <Spinner
+                android:id="@+id/profile_spinner"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1" />
 
-        <ImageButton
-            android:id="@+id/delete_profile_button"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Delete Profile"
-            android:src="@android:drawable/ic_menu_delete" />
+            <ImageButton
+                android:id="@+id/add_profile_button"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@android:drawable/ic_input_add"
+                android:contentDescription="Add Profile" />
+
+            <ImageButton
+                android:id="@+id/delete_profile_button"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@android:drawable/ic_delete"
+                android:contentDescription="Delete Profile" />
         </LinearLayout>
 
-        <Switch
-            android:id="@+id/tunnel_switch"
-            android:layout_width="0dp"
+        <!-- Domain Input -->
+        <TextView
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:checked="false"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp"
-            android:text="Turn Tunnel On/Off"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/profile_management_layout" />
+            android:text="Domain"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/domain_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="example.com"
+            android:inputType="textUri"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Resolvers Section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="DNS Resolvers"
+            android:textSize="16sp"
+            android:textStyle="bold" />
 
         <LinearLayout
-            android:id="@+id/resolver_header"
-            android:layout_width="0dp"
+            android:id="@+id/resolvers_container"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/add_resolver_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="+ Add Resolver"
+            android:layout_marginBottom="16dp" />
+
+        <!-- SOCKS5 Port Input -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SOCKS5 Proxy Port"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/socks5_port_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="1080"
+            android:inputType="number"
+            android:text="1080"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Status Section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Status"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginTop="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="horizontal"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/tunnel_switch">
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:id="@+id/slipstream_status_indicator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="●"
+                android:textSize="24sp"
+                android:textColor="#FF0000"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Slipstream: "
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/slipstream_status_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Stopped"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:id="@+id/socks5_status_indicator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="●"
+                android:textSize="24sp"
+                android:textColor="#FF0000"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SOCKS5: "
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/socks5_status_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Stopped"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- VPN Switch -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="24dp">
 
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Resolvers (IP Addresses)"
-                android:textStyle="italic" />
+                android:text="VPN Tunnel"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <Switch
+                android:id="@+id/tunnel_switch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
+
+        <!-- Log Section -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Activity Log"
+                android:textSize="16sp"
+                android:textStyle="bold" />
 
             <Button
-                android:id="@+id/add_resolver_button"
+                android:id="@+id/copy_log_button"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Add IP" />
-            </LinearLayout>
+                android:text="Copy"
+                android:textSize="12sp"
+                android:padding="8dp"
+                android:layout_marginEnd="8dp" />
 
-            <ScrollView
-                android:id="@+id/resolver_scroll"
-                android:layout_width="0dp"
-                android:layout_height="150dp"
-                android:layout_marginTop="8dp"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/resolver_header">
+            <Button
+                android:id="@+id/clear_log_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Clear"
+                android:textSize="12sp"
+                android:padding="8dp" />
+        </LinearLayout>
 
-                <LinearLayout
-                    android:id="@+id/resolvers_container"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical" />
-                </ScrollView>
+        <ScrollView
+            android:id="@+id/log_scroll_view"
+            android:layout_width="match_parent"
+            android:layout_height="250dp"
+            android:background="#F5F5F5"
+            android:padding="8dp"
+            android:scrollbars="vertical">
 
-                <EditText
-                    android:id="@+id/domain_input"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:hint="Domain Name (e.g., example.com)"
-                    android:inputType="textUri"
-                    android:minHeight="48dp"
-                    app:layout_constraintEnd_toEndOf="parent"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintTop_toBottomOf="@id/resolver_scroll" />
+            <TextView
+                android:id="@+id/log_text_view"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:textColor="#000000"
+                android:textIsSelectable="true"
+                android:text="[Log messages will appear here]" />
 
-                <TextView
-                    android:id="@+id/key_path_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:text="Private Key Configuration"
-                    android:textStyle="bold"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintTop_toBottomOf="@id/domain_input" />
+        </ScrollView>
 
-                <LinearLayout
-                    android:id="@+id/key_path_container"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    app:layout_constraintEnd_toEndOf="parent"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintTop_toBottomOf="@id/key_path_label">
-
-                    <EditText
-                        android:id="@+id/key_path_input"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:hint="Private Key Path (e.g. /sdcard/id_ed25519)"
-                        android:inputType="textUri"
-                        android:minHeight="48dp" />
-
-                    <ImageButton
-                        android:id="@+id/btn_browse_key"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:src="@android:drawable/ic_menu_search"
-                        android:contentDescription="Browse File" />
-                    </LinearLayout>
-
-                <TextView
-                    android:id="@+id/status_section_title"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="24dp"
-                    android:text="Service Status"
-                    android:textSize="18sp"
-                    android:textStyle="italic"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintTop_toBottomOf="@id/key_path_container" />
-
-                <TextView
-                    android:id="@+id/slipstream_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:text="Slipstream Client:"
-                    android:textStyle="bold"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintTop_toBottomOf="@id/status_section_title" />
-
-                <TextView
-                    android:id="@+id/slipstream_status_indicator"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="-"
-                    android:textSize="18sp"
-                    app:layout_constraintBottom_toBottomOf="@id/slipstream_label"
-                    app:layout_constraintStart_toEndOf="@id/slipstream_label"
-                    app:layout_constraintTop_toTopOf="@id/slipstream_label" />
-
-                <TextView
-                    android:id="@+id/slipstream_status_text"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="Stopped"
-                    app:layout_constraintBottom_toBottomOf="@id/slipstream_label"
-                    app:layout_constraintEnd_toEndOf="parent"
-                    app:layout_constraintStart_toEndOf="@id/slipstream_status_indicator"
-                    app:layout_constraintTop_toTopOf="@id/slipstream_label" />
-
-                <TextView
-                    android:id="@+id/ssh_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="SSH Tunnel:"
-                    android:textStyle="bold"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintTop_toBottomOf="@id/slipstream_label" />
-
-                <TextView
-                    android:id="@+id/ssh_status_indicator"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="-"
-                    android:textSize="18sp"
-                    app:layout_constraintBottom_toBottomOf="@id/ssh_label"
-                    app:layout_constraintStart_toEndOf="@id/ssh_label"
-                    app:layout_constraintTop_toTopOf="@id/ssh_label" />
-
-                <TextView
-                    android:id="@+id/ssh_status_text"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="Stopped"
-                    app:layout_constraintBottom_toBottomOf="@id/ssh_label"
-                    app:layout_constraintEnd_toEndOf="parent"
-                    app:layout_constraintStart_toEndOf="@id/ssh_status_indicator"
-                    app:layout_constraintTop_toTopOf="@id/ssh_label" />
-
-                </androidx.constraintlayout.widget.ConstraintLayout>
+    </LinearLayout>
+</ScrollView>
