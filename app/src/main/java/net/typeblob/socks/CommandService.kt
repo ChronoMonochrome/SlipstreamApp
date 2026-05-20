@@ -26,42 +26,53 @@ data class CommandResult(val exitCode: Int, val output: String)
 
 class CommandService : LifecycleService(), CoroutineScope {
 
-    private val job = SupervisorJob()
-    override val coroutineContext: CoroutineContext = job + Dispatchers.IO
+private val job = SupervisorJob()
+override val coroutineContext: CoroutineContext = job + Dispatchers.IO
 
-    private val TAG = "CommandService"
-    private val NOTIFICATION_CHANNEL_ID = "CommandServiceChannel"
-    private val NOTIFICATION_ID = 101
+private val TAG = "CommandService"
+private val NOTIFICATION_CHANNEL_ID = "CommandServiceChannel"
+private val NOTIFICATION_ID = 101
 
-    private val mainHandler = Handler(Looper.getMainLooper())
+private val mainHandler = Handler(Looper.getMainLooper())
 
-    private var slipstreamProcess: Process? = null
-    private var proxyProcess: Process? = null
-    private var slipstreamReaderJob: Job? = null
-    private var proxyReaderJob: Job? = null
-    private var tunnelMonitorJob: Job? = null
-    private var mainExecutionJob: Job? = null
+private var proxyProcess: Process? = null
+private var proxyReaderJob: Job? = null
+private var tunnelMonitorJob: Job? = null
+private var mainExecutionJob: Job? = null
 
-    private val tunnelMutex = Mutex()
+private val tunnelMutex = Mutex()
 
-    private var resolversConfig: ArrayList<String> = arrayListOf()
-    private var domainNameConfig: String = ""
-    private var privateKeyPath: String = ""
+// Конфигурационные переменные текущей сессии
+private var hostConfig: String = ""
+private var portConfig: Int = 8000
+private var userConfig: String = "chrono"
+private var privateKeyPath: String = ""
     private var isRestarting = false
 
+    // Локальный трекинг внутреннего состояния Go-бинарника ("Running", "Reconnecting...", "Stopped")
+    private var tunnelState = "Stopped"
+
     companion object {
-        const val EXTRA_RESOLVERS = "extra_ip_addresses_list"
+        const val EXTRA_HOST = "extra_host"
+        const val EXTRA_PORT = "extra_port"
+        const val EXTRA_USER = "extra_user"
         const val EXTRA_DOMAIN = "domain_name"
         const val EXTRA_KEY_PATH = "private_key_path"
-        const val SLIPSTREAM_BINARY_NAME = "slipstream-client"
+        const val EXTRA_UPSTREAM_PORT = "extra_upstream_port"
+        const val EXTRA_LOCAL_PROXY_PORT = "extra_local_proxy_port"
+
         const val PROXY_CLIENT_BINARY_NAME = "proxy-client"
+
         const val ACTION_STATUS_UPDATE = "net.typeblob.socks.STATUS_UPDATE"
         const val ACTION_ERROR = "net.typeblob.socks.ERROR"
         const val ACTION_REQUEST_STATUS = "net.typeblob.socks.REQUEST_STATUS"
+        const val ACTION_LOG_OUTPUT = "net.typeblob.socks.LOG_OUTPUT"
+
         const val EXTRA_STATUS_SLIPSTREAM = "status_slipstream"
         const val EXTRA_STATUS_SSH = "status_ssh"
         const val EXTRA_ERROR_MESSAGE = "error_message"
-        const val EXTRA_ERROR_OUTPUT = "error_output"
+        const val EXTRA_LOG_LINE = "log_line"
+
         private const val MONITOR_INTERVAL_MS = 2000L
     }
 
@@ -74,33 +85,47 @@ class CommandService : LifecycleService(), CoroutineScope {
         super.onStartCommand(intent, flags, startId)
 
         if (intent?.action == ACTION_REQUEST_STATUS) {
-            sendCurrentStatus("Request")
+            sendCurrentStatus()
             return START_STICKY
         }
 
-        val newResolvers = intent?.getStringArrayListExtra(EXTRA_RESOLVERS) ?: arrayListOf()
-        val newDomain = intent?.getStringExtra(EXTRA_DOMAIN) ?: ""
+        val newHost = intent?.getStringExtra(EXTRA_HOST) ?: intent?.getStringExtra(EXTRA_DOMAIN) ?: ""
+
+        val newPort = intent?.let {
+            if (it.hasExtra(EXTRA_PORT)) {
+                try {
+                    it.getIntExtra(EXTRA_PORT, 8000)
+                } catch (e: Exception) {
+                    it.getStringExtra(EXTRA_PORT)?.toIntOrNull() ?: 8000
+                }
+            } else 8000
+        } ?: 8000
+
+        val newUser = intent?.getStringExtra(EXTRA_USER) ?: "chrono"
         val newPrivateKeyPath = intent?.getStringExtra(EXTRA_KEY_PATH) ?: ""
 
-        if (newResolvers == resolversConfig &&
-                        newDomain == domainNameConfig &&
-                        slipstreamProcess?.isAlive == true
+        if (newHost == hostConfig &&
+            newPort == portConfig &&
+            newUser == userConfig &&
+            newPrivateKeyPath == privateKeyPath &&
+            proxyProcess?.isAlive == true
         ) {
-            Log.d(TAG, "Profile unchanged and alive. Skipping.")
+            Log.d(TAG, "Profile unchanged and alive. Skipping restart.")
             return START_STICKY
         }
 
-        resolversConfig = newResolvers
-        domainNameConfig = newDomain
+        hostConfig = newHost
+        portConfig = newPort
+        userConfig = newUser
         privateKeyPath = newPrivateKeyPath
 
-        Log.d(TAG, "Service starting/updating profile. Domain: $domainNameConfig")
+        Log.d(TAG, "Service starting/updating profile. Target: $userConfig@$hostConfig:$portConfig")
         startForeground(NOTIFICATION_ID, buildForegroundNotification())
 
         mainExecutionJob?.cancel()
         mainExecutionJob = launch {
             try {
-                startTunnelSequence(resolversConfig, domainNameConfig)
+                startTunnelSequence()
             } catch (e: CancellationException) {
                 Log.d(TAG, "Startup job cancelled (normal for profile switch)")
             }
@@ -109,49 +134,51 @@ class CommandService : LifecycleService(), CoroutineScope {
         return START_STICKY
     }
 
-    private fun sendCurrentStatus(logTag: String) {
-        val sAlive = slipstreamProcess?.isAlive == true
+    private fun sendCurrentStatus() {
         val proxyAlive = proxyProcess?.isAlive == true
         sendStatusUpdate(
-                if (sAlive) "Running" else "Stopped",
-                if (proxyAlive) "Running" else "Stopped"
+            "Disabled",
+            if (proxyAlive) tunnelState else "Stopped"
         )
     }
 
-    private suspend fun startTunnelSequence(resolvers: ArrayList<String>, domainName: String) {
+    private suspend fun startTunnelSequence() {
         tunnelMutex.withLock {
             isRestarting = true
             try {
-                sendStatusUpdate("Cleaning up...", "Waiting...")
+                tunnelState = "Starting..."
+                sendStatusUpdate("Disabled", tunnelState)
                 tunnelMonitorJob?.cancel()
-                slipstreamReaderJob?.cancel()
                 proxyReaderJob?.cancel()
 
                 stopBackgroundProcesses()
                 cleanUpLingeringProcesses()
 
-                val slipstreamPath = copyBinaryToFilesDir(SLIPSTREAM_BINARY_NAME)
                 val proxyPath = copyBinaryToFilesDir(PROXY_CLIENT_BINARY_NAME)
 
-                if (slipstreamPath != null && proxyPath != null) {
-                    // Fix Private Key Permissions (Critical for SSH/Proxy clients)
+                if (proxyPath != null) {
                     if (privateKeyPath.isNotEmpty()) {
                         try {
                             Runtime.getRuntime()
-                                    .exec(arrayOf("chmod", "600", privateKeyPath))
-                                    .waitFor()
+                            .exec(arrayOf("chmod", "600", privateKeyPath))
+                            .waitFor()
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to chmod key: ${e.message}")
                         }
                     }
 
-                    val success = executeCommands(slipstreamPath, proxyPath, resolvers, domainName)
+                    val success = executeCommands(proxyPath)
                     if (success && isActive) {
                         tunnelMonitorJob = launch { startTunnelMonitor() }
                     } else if (isActive) {
-                        Log.e(TAG, "Failed to start tunnel. Stopping service.")
+                        Log.e(TAG, "Failed to start SSH tunnel. Stopping service.")
+                        tunnelState = "Stopped"
                         stopSelf()
                     }
+                } else {
+                    sendErrorMessage("Failed to copy proxy-client binary from assets.")
+                    tunnelState = "Stopped"
+                    stopSelf()
                 }
             } finally {
                 isRestarting = false
@@ -163,114 +190,100 @@ class CommandService : LifecycleService(), CoroutineScope {
         while (isActive) {
             delay(MONITOR_INTERVAL_MS)
 
-            val slipstreamAlive = slipstreamProcess?.isAlive == true
             val proxyAlive = proxyProcess?.isAlive == true
 
-            if (!slipstreamAlive || !proxyAlive) {
+            if (!proxyAlive) {
                 if (isActive && !isRestarting) {
-                    Log.w(TAG, "Tunnel failure detected. Restarting...")
-                    launch { startTunnelSequence(resolversConfig, domainNameConfig) }
+                    Log.w(TAG, "SSH Tunnel failure detected. Restarting...")
+                    tunnelState = "Stopped"
+                    launch { startTunnelSequence() }
                     break
                 }
             } else {
-                sendStatusUpdate("Running", "Running")
+                // Отправляем актуальное динамическое состояние (Running или Reconnecting...)
+                sendStatusUpdate("Disabled", tunnelState)
             }
         }
     }
 
-    private suspend fun executeCommands(
-            slipstreamPath: String,
-            proxyPath: String,
-            resolvers: ArrayList<String>,
-            domainName: String
-    ): Boolean {
-        // 1. Start Slipstream
-        val slipCommand =
-                mutableListOf(slipstreamPath, "--congestion-control=bbr", "--domain=$domainName")
-        resolvers.forEach {
-            slipCommand.add("--resolver=${if (it.contains(":")) it else "$it:53"}")
-        }
+    private suspend fun executeCommands(proxyPath: String): Boolean {
+        tunnelState = "Starting Go SSH Client..."
+        sendStatusUpdate("Disabled", tunnelState)
 
-        val slipResult =
-                startProcessWithOutputCheck(
-                        slipCommand,
-                        SLIPSTREAM_BINARY_NAME,
-                        5000L,
-                        "Connection confirmed."
-                )
-        slipstreamProcess = slipResult.second
+        val targetSshAddr = if (hostConfig.contains(":")) hostConfig else "$hostConfig:$portConfig"
 
-        if (slipResult.first.contains("Connection confirmed.")) {
-            slipstreamReaderJob = launch {
-                readProcessOutput(slipstreamProcess!!, SLIPSTREAM_BINARY_NAME)
+        val proxyCommand = listOf(
+            proxyPath,
+            "-upstream=127.0.0.1:2080",
+            privateKeyPath,
+            targetSshAddr,
+            "127.0.0.1:1080"
+        )
+
+        val proxyResult = startProcessWithOutputCheck(
+            proxyCommand,
+            PROXY_CLIENT_BINARY_NAME,
+            12000L,
+            "[Успех]"
+        )
+
+        proxyProcess = proxyResult.second
+
+        if (proxyResult.first.contains("[Успех]") && proxyProcess?.isAlive == true) {
+            proxyReaderJob = launch {
+                readProcessOutput(proxyProcess!!, PROXY_CLIENT_BINARY_NAME)
             }
-            sendStatusUpdate("Running", "Starting Proxy...")
-            delay(1000L)
-
-            // 2. Start Proxy Client
-            val proxyCommand = listOf(proxyPath, privateKeyPath, "127.0.0.1:5201", "127.0.0.1:3080")
-
-            // IMPORTANT: Passing null successMsg means we just check if it stays alive for 1.5
-            // seconds
-            val proxyResult =
-                    startProcessWithOutputCheck(proxyCommand, PROXY_CLIENT_BINARY_NAME, 1500L, null)
-            proxyProcess = proxyResult.second
-
-            if (proxyProcess?.isAlive == true) {
-                proxyReaderJob = launch {
-                    readProcessOutput(proxyProcess!!, PROXY_CLIENT_BINARY_NAME)
-                }
-                sendStatusUpdate("Running", "Running")
-                return true
-            } else {
-                Log.e(TAG, "Proxy client died immediately after start.")
-                sendErrorMessage("Proxy Client failed to start. Check key permissions.")
-            }
+            tunnelState = "Running"
+            sendStatusUpdate("Disabled", tunnelState)
+            return true
         } else {
-            sendErrorMessage("Slipstream failed: ${slipResult.first}")
+            Log.e(TAG, "Proxy client failed to establish connection or died.")
+            sendErrorMessage("SSH Tunnel failed: ${proxyResult.first}")
+            killProcess(proxyProcess)
+            proxyProcess = null
+            tunnelState = "Stopped"
         }
         return false
     }
 
     private suspend fun startProcessWithOutputCheck(
-            command: List<String>,
-            logTag: String,
-            timeout: Long,
-            successMsg: String?
+        command: List<String>,
+        logTag: String,
+        timeout: Long,
+        successMsg: String?
     ): Pair<String, Process> {
         return try {
             val process = ProcessBuilder(command).redirectErrorStream(true).start()
             val output = StringBuilder()
             val reader = BufferedReader(InputStreamReader(process.inputStream))
 
-            val result =
-                    withTimeoutOrNull(timeout) {
-                        while (isActive) {
-                            if (reader.ready()) {
-                                val line = reader.readLine() ?: break
-                                output.append(line).append("\n")
-                                Log.d(TAG, "$logTag: $line")
-                                if (successMsg != null && line.contains(successMsg))
-                                        return@withTimeoutOrNull "SUCCESS"
-                            } else {
-                                delay(100)
-                            }
-                        }
-                        "TIMEOUT"
-                    }
+            val result = withTimeoutOrNull(timeout) {
+                while (isActive) {
+                    if (reader.ready()) {
+                        val line = reader.readLine() ?: break
+                        output.append(line).append("\n")
+                        Log.d(TAG, "$logTag: $line")
+                        sendLogLine(line)
 
-            // If we aren't looking for a specific message, we just check if it crashed
-            val finalOutput =
-                    if (successMsg == null && process.isAlive) "Started"
-                    else output.toString().trim()
+                        if (successMsg != null && line.contains(successMsg)) {
+                            return@withTimeoutOrNull "SUCCESS"
+                        }
+                    } else {
+                        delay(100)
+                    }
+                }
+                "TIMEOUT"
+            }
+
+            val finalOutput = if (successMsg == null && process.isAlive) "Started" else output.toString().trim()
             Pair(
-                    if (successMsg != null && result == "SUCCESS") successMsg else finalOutput,
+                if (successMsg != null && result == "SUCCESS") successMsg else finalOutput,
                     process
             )
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            Log.e(TAG, "Error starting $logTag: ${e.message}")
-            Pair("Error: ${e.message}", ProcessBuilder("echo").start())
+                Log.e(TAG, "Error starting $logTag: ${e.message}")
+                Pair("Error: ${e.message}", ProcessBuilder("echo").start())
         }
     }
 
@@ -281,6 +294,20 @@ class CommandService : LifecycleService(), CoroutineScope {
                 while (isActive && process.isAlive) {
                     val line = reader.readLine() ?: break
                     Log.d(TAG, "$logTag Live: $line")
+                    sendLogLine(line)
+
+                    // Парсинг логов для динамического переключения состояний в интерфейсе
+                    if (line.contains("[Туннель] Подключение разорвано") || line.contains("Ошибка переподключения")) {
+                        if (tunnelState != "Reconnecting...") {
+                            tunnelState = "Reconnecting..."
+                            sendStatusUpdate("Disabled", tunnelState)
+                        }
+                    } else if (line.contains("[Туннель] Переподключение успешно завершено!")) {
+                        if (tunnelState != "Running") {
+                            tunnelState = "Running"
+                            sendStatusUpdate("Disabled", tunnelState)
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Output Reader Error ($logTag): ${e.message}")
@@ -292,6 +319,13 @@ class CommandService : LifecycleService(), CoroutineScope {
         }
     }
 
+    private fun sendLogLine(line: String) {
+        val intent = Intent(ACTION_LOG_OUTPUT).apply {
+            putExtra(EXTRA_LOG_LINE, line)
+        }
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+    }
+
     private fun sendErrorMessage(msg: String) {
         val intent = Intent(ACTION_ERROR).apply { putExtra(EXTRA_ERROR_MESSAGE, msg) }
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
@@ -299,12 +333,11 @@ class CommandService : LifecycleService(), CoroutineScope {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val chan =
-                    NotificationChannel(
-                            NOTIFICATION_CHANNEL_ID,
-                            "Tunnel Service",
-                            NotificationManager.IMPORTANCE_LOW
-                    )
+            val chan = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "Tunnel Service",
+                NotificationManager.IMPORTANCE_LOW
+            )
             val service = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             service.createNotificationChannel(chan)
         }
@@ -312,30 +345,26 @@ class CommandService : LifecycleService(), CoroutineScope {
 
     private fun buildForegroundNotification(): Notification {
         val intent = Intent(this, MainActivity::class.java)
-        val pendingIntent =
-                PendingIntent.getActivity(
-                        this,
-                        0,
-                        intent,
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-                                PendingIntent.FLAG_IMMUTABLE
-                        else 0
-                )
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        )
 
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-                .setContentTitle("Tunnel Service")
-                .setContentText("Status: Active")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentIntent(pendingIntent)
-                .build()
+        .setContentTitle("Go SSH Pipeline")
+        .setContentText("SSH Tunnel over SOCKS5 & TLS active")
+        .setSmallIcon(android.R.drawable.ic_dialog_info)
+        .setContentIntent(pendingIntent)
+        .build()
     }
 
     private fun sendStatusUpdate(slipstreamStatus: String, sshStatus: String) {
-        val intent =
-                Intent(ACTION_STATUS_UPDATE).apply {
-                    putExtra(EXTRA_STATUS_SLIPSTREAM, slipstreamStatus)
-                    putExtra(EXTRA_STATUS_SSH, sshStatus)
-                }
+        val intent = Intent(ACTION_STATUS_UPDATE).apply {
+            putExtra(EXTRA_STATUS_SLIPSTREAM, slipstreamStatus)
+            putExtra(EXTRA_STATUS_SSH, sshStatus)
+        }
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
 
@@ -356,7 +385,6 @@ class CommandService : LifecycleService(), CoroutineScope {
 
     private fun cleanUpLingeringProcesses() {
         try {
-            Runtime.getRuntime().exec(arrayOf("killall", "-9", SLIPSTREAM_BINARY_NAME)).waitFor()
             Runtime.getRuntime().exec(arrayOf("killall", "-9", PROXY_CLIENT_BINARY_NAME)).waitFor()
         } catch (e: Exception) {}
     }
@@ -372,9 +400,7 @@ class CommandService : LifecycleService(), CoroutineScope {
 
     private fun stopBackgroundProcesses() {
         killProcess(proxyProcess)
-        killProcess(slipstreamProcess)
         proxyProcess = null
-        slipstreamProcess = null
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -384,6 +410,7 @@ class CommandService : LifecycleService(), CoroutineScope {
 
     override fun onDestroy() {
         Log.d(TAG, "Service destroyed.")
+        tunnelState = "Stopped"
         mainExecutionJob?.cancel()
         job.cancel()
         mainHandler.removeCallbacksAndMessages(null)

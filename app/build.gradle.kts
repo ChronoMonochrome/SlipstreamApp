@@ -52,4 +52,10 @@ dependencies {
     implementation("com.google.android.material:material:1.10.0")
     implementation("androidx.activity:activity-ktx:1.8.1")
     implementation("androidx.lifecycle:lifecycle-service:2.6.2") // For CommandService
+    // SSH Library for Dynamic Port Forwarding (SOCKS5)
+    implementation("com.github.mwiede:jsch:0.2.16")
+    
+    // Рекомендуется также добавить LocalBroadcastManager, так как он используется в коде MainActivity
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
+
 }

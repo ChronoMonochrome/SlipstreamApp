@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.net.VpnService;
@@ -17,13 +18,15 @@ import net.typeblob.socks.socks.util.Routes;
 import net.typeblob.socks.socks.util.Utility;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 
 import static net.typeblob.socks.socks.util.Constants.*;
 
 public class SocksVpnService extends VpnService {
     private static final String TAG = "SocksVpnService";
+
+    private boolean proxy_only = false;
 
     class VpnBinder extends IVpnService.Stub {
         @Override
@@ -39,32 +42,48 @@ public class SocksVpnService extends VpnService {
     private boolean mRunning = false;
     private final IBinder mBinder = new VpnBinder();
 
+    private void loadProxyConfiguration() {
+        proxy_only = getSharedPreferences("SlipstreamPrefs", Context.MODE_PRIVATE)
+                .getBoolean("current_proxy_only", true);
+        Log.d(TAG, "Loaded proxy_only configuration state: " + proxy_only);
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.i(TAG, "onStartCommand called");
+
+        loadProxyConfiguration();
 
         if (intent == null) {
             Log.w(TAG, "Sticky start with null intent, ignoring");
             return START_STICKY;
         }
 
-        if (intent != null && intent.getBooleanExtra("ACTION_STOP", false)) {
-                Log.i(TAG, "Stop signal received via Intent");
-                stopMe();
-                return START_NOT_STICKY;
-            }
+        if (intent.getBooleanExtra("ACTION_STOP", false)) {
+            Log.i(TAG, "Stop signal received via Intent");
+            stopMe();
+            return START_NOT_STICKY;
+        }
 
         if (mRunning) {
             Log.i(TAG, "Service already running, ignoring start request");
             return START_STICKY;
         }
 
-        // Log all input parameters for debugging
-        final String name = intent.getStringExtra(INTENT_NAME);
-        final String server = intent.getStringExtra(INTENT_SERVER);
+        // Защита от Null: если параметры отсутствуют, ставим дефолтный локальный адрес
+        String name = intent.getStringExtra(INTENT_NAME);
+        if (TextUtils.isEmpty(name)) name = "SocksVPN";
+
+        String server = intent.getStringExtra(INTENT_SERVER);
+        if (TextUtils.isEmpty(server)) server = "127.0.0.1";
+
         final int port = intent.getIntExtra(INTENT_PORT, 1080);
-        final String route = intent.getStringExtra(INTENT_ROUTE);
-        final String dns = intent.getStringExtra(INTENT_DNS);
+
+        String route = intent.getStringExtra(INTENT_ROUTE);
+        if (TextUtils.isEmpty(route)) route = "all";
+
+        String dns = intent.getStringExtra(INTENT_DNS);
+        if (TextUtils.isEmpty(dns)) dns = "77.88.8.8";
 
         Log.d(TAG, String.format("Params: name=%s, server=%s:%d, route=%s, dns=%s", name, server, port, route, dns));
 
@@ -136,32 +155,53 @@ public class SocksVpnService extends VpnService {
 
     private void configure(String name, String route, boolean perApp, boolean bypass, String[] apps, boolean ipv6) {
         Builder b = new Builder();
-        b.setMtu(1500).setSession(name).addAddress("26.26.26.1", 24).addDnsServer("8.8.8.8");
+        b.setMtu(1500).setSession(name).addAddress("26.26.26.1", 24).addDnsServer("77.88.8.8");
 
         if (ipv6) {
             b.addAddress("fdfe:dcba:9876::1", 126).addRoute("::", 0);
         }
 
         Routes.addRoutes(this, b, route);
-        b.addRoute("8.8.8.8", 32);
+        b.addRoute("77.88.8.8", 32);
 
-        // Disallow self to prevent infinite loops
-        try {
-            b.addDisallowedApplication(getPackageName());
-            Log.d(TAG, "Bypassing self: " + getPackageName());
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to add self to disallowed list", e);
+        // Приложения, трафик которых ЗАПРЕЩЕНО направлять в VPN (Защита от бесконечного цикла петли)
+        List<String> criticalPackages = Arrays.asList(
+                getPackageName(),                  // Наше приложение
+                "com.termux",                      // Termux環境
+                "com.v2ray.ang",                   // v2rayNG
+                "moe.nb4a",                        // NekoBox
+                "io.nekohasekai.sageret",          // SagerNet
+                "com.github.dyhkwong.sagernet",
+                "com.v2raytun.android",
+                "com.singbox.android",             // Sing-box
+                "com.github.kr328.clash"           // Clash
+        );
+
+        // Исключаем системные прокси-приложения и себя, чтобы не зациклить трафик
+        for (String p : criticalPackages) {
+            String cleanPkg = p.trim();
+            if (TextUtils.isEmpty(cleanPkg)) continue;
+            try {
+                b.addDisallowedApplication(cleanPkg);
+            } catch (Exception e) {
+                Log.w(TAG, "Could not add critical application to bypass list: " + cleanPkg);
+            }
         }
 
+        // Обработка кастомного Per-App списков пользователя
         if (perApp && apps != null) {
             Log.d(TAG, "Per-app routing: " + (bypass ? "Bypass" : "Allowed") + " list: " + Arrays.toString(apps));
             for (String p : apps) {
-                if (TextUtils.isEmpty(p) || p.equals(getPackageName())) continue;
+                String cleanPkg = p.trim();
+                if (TextUtils.isEmpty(cleanPkg) || criticalPackages.contains(cleanPkg)) continue;
                 try {
-                    if (bypass) b.addDisallowedApplication(p.trim());
-                    else b.addAllowedApplication(p.trim());
+                    if (bypass) {
+                        b.addDisallowedApplication(cleanPkg);
+                    } else {
+                        b.addAllowedApplication(cleanPkg);
+                    }
                 } catch (Exception e) {
-                    Log.w(TAG, "Could not apply rule for app: " + p);
+                    Log.w(TAG, "Could not apply rule for app: " + cleanPkg);
                 }
             }
         }
